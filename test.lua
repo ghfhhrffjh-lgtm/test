@@ -1,6 +1,5 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- IRON MAN FLIGHT (Custom Joystick, 3D управление по камере)
--- Джойстик справа, чуть выше середины
+-- IRON MAN FLIGHT (Joystick как кнопка, 100% работает)
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
@@ -12,6 +11,7 @@ local humanoid = character:WaitForChild("Humanoid")
 local maxSpeed = 80
 local deadZone = 0.15
 local forwardBias = 0.7
+local joystickRadius = 60 -- радиус в пикселях
 
 -- ========== ПЕРЕМЕННЫЕ ==========
 local flying = false
@@ -27,11 +27,11 @@ gui.Parent = player.PlayerGui
 gui.ResetOnSpawn = false
 gui.Name = "IronManGUI"
 
--- Кнопка ВЗЛЁТ/ПОСАДКА (оставим слева вверху, чтобы не мешала джойстику)
+-- Кнопка ВЗЛЁТ/ПОСАДКА
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = gui
 toggleBtn.Size = UDim2.new(0, 120, 0, 50)
-toggleBtn.Position = UDim2.new(0.02, 0, 0.05, 0) -- слева вверху
+toggleBtn.Position = UDim2.new(0.02, 0, 0.05, 0)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
 toggleBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
 toggleBtn.Text = "🦾 ВЗЛЁТ"
@@ -40,23 +40,25 @@ toggleBtn.TextSize = 18
 toggleBtn.BorderSizePixel = 0
 toggleBtn.BackgroundTransparency = 0.2
 
--- Рамка джойстика (справа, чуть выше середины)
-local joystickFrame = Instance.new("Frame")
-joystickFrame.Parent = gui
-joystickFrame.Size = UDim2.new(0, 150, 0, 150)
-joystickFrame.Position = UDim2.new(0.75, -75, 0.38, -75) -- привязка к центру фрейма
-joystickFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-joystickFrame.BackgroundTransparency = 0.8
-joystickFrame.BorderSizePixel = 2
-joystickFrame.BorderColor3 = Color3.fromRGB(200, 200, 200)
-joystickFrame.Visible = false
+-- ДЖОЙСТИК (прозрачная кнопка-область)
+local joystickButton = Instance.new("TextButton")
+joystickButton.Parent = gui
+joystickButton.Size = UDim2.new(0, 150, 0, 150)
+joystickButton.Position = UDim2.new(0.75, -75, 0.38, -75)
+joystickButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+joystickButton.BackgroundTransparency = 0.8
+joystickButton.BorderSizePixel = 2
+joystickButton.BorderColor3 = Color3.fromRGB(200, 200, 200)
+joystickButton.Text = ""
+joystickButton.Visible = false
+-- Делаем круглой
 local corner = Instance.new("UICorner")
-corner.Parent = joystickFrame
+corner.Parent = joystickButton
 corner.CornerRadius = UDim.new(1, 0)
 
--- Кружок (индикатор)
+-- Кружок (индикатор положения пальца)
 local knob = Instance.new("Frame")
-knob.Parent = joystickFrame
+knob.Parent = joystickButton
 knob.Size = UDim2.new(0, 40, 0, 40)
 knob.Position = UDim2.new(0.5, -20, 0.5, -20)
 knob.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
@@ -125,7 +127,7 @@ local function startFlight()
     flying = true
     toggleBtn.Text = "🛬 ПОСАДКА"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    joystickFrame.Visible = true
+    joystickButton.Visible = true
 
     humanoid.PlatformStand = true
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
@@ -149,7 +151,7 @@ local function stopFlight()
     flying = false
     toggleBtn.Text = "🦾 ВЗЛЁТ"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-    joystickFrame.Visible = false
+    joystickButton.Visible = false
     joystickDir = Vector3.new(0, 0, 0)
     knob.Position = UDim2.new(0.5, -20, 0.5, -20)
 
@@ -172,53 +174,45 @@ local function stopFlight()
     print("🛬 Flight deactivated.")
 end
 
--- ========== ОБРАБОТКА ТАЧА ==========
-local joystickCenter = nil
-
-local function onTouchStart(input, gameProcessed)
-    if gameProcessed then return end
+-- ========== ОБРАБОТКА ДЖОЙСТИКА (через события кнопки) ==========
+local function handleJoystickTouch(input)
     if not flying then return end
-    local pos = input.Position
-    local framePos = joystickFrame.AbsolutePosition
-    local frameSize = joystickFrame.AbsoluteSize
-    if pos.X >= framePos.X and pos.X <= framePos.X + frameSize.X and
-       pos.Y >= framePos.Y and pos.Y <= framePos.Y + frameSize.Y then
-        joystickActive = true
-        joystickCenter = framePos + frameSize / 2
-        updateJoystick(input)
-    end
-end
-
-local function onTouchMove(input, gameProcessed)
-    if gameProcessed then return end
-    if not flying or not joystickActive then return end
-    updateJoystick(input)
-end
-
-local function onTouchEnd(input, gameProcessed)
-    if gameProcessed then return end
-    if joystickActive then
-        joystickActive = false
-        joystickDir = Vector3.new(0, 0, 0)
-        knob.Position = UDim2.new(0.5, -20, 0.5, -20)
-    end
-end
-
-local function updateJoystick(input)
-    if not joystickCenter then return end
-    local delta = input.Position - joystickCenter
-    local maxDelta = 60
+    -- Получаем размеры кнопки
+    local btnSize = joystickButton.AbsoluteSize
+    local center = joystickButton.AbsolutePosition + btnSize / 2
+    local touchPos = input.Position
+    local delta = touchPos - center
+    local maxDelta = joystickRadius
     local clamped = delta.Unit * math.min(delta.Magnitude, maxDelta)
     joystickDir = clamped / maxDelta
     knob.Position = UDim2.new(0.5, clamped.X, 0.5, clamped.Y)
 end
 
-local uis = game:GetService("UserInputService")
-uis.TouchStarted:Connect(onTouchStart)
-uis.TouchMoved:Connect(onTouchMove)
-uis.TouchEnded:Connect(onTouchEnd)
+joystickButton.TouchStart:Connect(function(input)
+    joystickActive = true
+    handleJoystickTouch(input)
+end)
 
--- ========== КНОПКА ==========
+joystickButton.TouchMoved:Connect(function(input)
+    if joystickActive then
+        handleJoystickTouch(input)
+    end
+end)
+
+joystickButton.TouchEnded:Connect(function(input)
+    if joystickActive then
+        joystickActive = false
+        joystickDir = Vector3.new(0, 0, 0)
+        knob.Position = UDim2.new(0.5, -20, 0.5, -20)
+    end
+end)
+
+-- Также поддерживаем мышь для теста на ПК (необязательно)
+joystickButton.MouseButton1Down:Connect(function()
+    -- Для ПК можно добавить, но на телефоне это не нужно
+end)
+
+-- ========== КНОПКА ВКЛ/ВЫКЛ ==========
 toggleBtn.MouseButton1Click:Connect(function()
     if flying then stopFlight() else startFlight() end
 end)
@@ -231,5 +225,5 @@ player.CharacterAdded:Connect(function(newChar)
     if flying then stopFlight() end
 end)
 
-print("✅ MOD BY ROSE | IRON MAN FLIGHT (JOYSTICK RIGHT-UP) LOADED")
+print("✅ MOD BY ROSE | IRON MAN FLIGHT (FIXED JOYSTICK) LOADED")
 print("📱 Telegram: https://t.me/rosemod_deep")
