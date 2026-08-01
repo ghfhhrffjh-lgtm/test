@@ -1,11 +1,41 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- ТЕХНИКА DROPKICK + ВЗРЫВ
+-- DROPKICK + NOCLIP + ВЗРЫВ
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
+
+-- ========== NOCLIP (ПРОХОЖДЕНИЕ СКВОЗЬ ИГРОКОВ) ==========
+local function enableNoClip()
+    if character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+                -- Делаем прозрачным (как в DropKick)
+                part.Transparency = 0.5
+            end
+        end
+        -- Отключаем коллизию с другими игроками
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CanCollide = false
+        end
+    end
+end
+
+-- ========== ОТКЛЮЧЕНИЕ NOCLIP ==========
+local function disableNoClip()
+    if character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+                part.Transparency = 0
+            end
+        end
+    end
+end
 
 -- ========== ЗАЩИТА ОТ СМЕРТИ ==========
 local function godMode()
@@ -34,11 +64,14 @@ button.TextSize = 18
 button.BorderSizePixel = 0
 button.BackgroundTransparency = 0.15
 
--- ========== ФУНКЦИЯ ОТБРАСЫВАНИЯ (как в DropKick) ==========
+-- ========== DROPKICK ОТБРАСЫВАНИЕ (с NoClip) ==========
 local function dropkickPlayers(centerPos)
     local radius = 40
-    local basePower = 120  -- сила отбрасывания (как в дропкике)
-    local upwardPower = 80 -- сила вверх
+    local basePower = 150
+    local upwardPower = 100
+    
+    -- ВКЛЮЧАЕМ NOCLIP (чтобы проходить сквозь игроков)
+    enableNoClip()
     
     for _, plr in ipairs(game.Players:GetPlayers()) do
         if plr ~= player and plr.Character then
@@ -50,47 +83,40 @@ local function dropkickPlayers(centerPos)
                 local dist = (targetRoot.Position - centerPos).Magnitude
                 
                 if dist < radius then
-                    -- ======== ТЕХНИКА DROPKICK ========
-                    -- 1. Очистка старых сил
+                    -- Очистка старых сил
                     for _, v in ipairs(targetRoot:GetChildren()) do
                         if v:IsA("BodyVelocity") or v:IsA("BodyForce") then
                             v:Destroy()
                         end
                     end
                     
-                    -- 2. Направление от центра
+                    -- Направление от центра
                     local dir = (targetRoot.Position - centerPos).Unit
                     if dist < 0.5 then
                         dir = Vector3.new(math.random(-1,1), 1, math.random(-1,1)).Unit
                     end
                     
-                    -- 3. Сила зависит от расстояния (чем ближе, тем сильнее)
+                    -- Сила
                     local power = basePower * (1 + (radius - dist) / radius)
                     
-                    -- 4. Прямой удар (как в DropKick)
+                    -- ТОЛЧОК (как в DropKick)
                     targetRoot.Velocity = Vector3.new(0, 0, 0)
                     targetRoot.AssemblyLinearVelocity = dir * power + Vector3.new(0, upwardPower * (1 + (radius - dist) / radius), 0)
                     
-                    -- 5. BodyVelocity (держит скорость)
+                    -- BodyVelocity для удержания
                     local bv = Instance.new("BodyVelocity")
                     bv.Parent = targetRoot
                     bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
                     bv.Velocity = dir * power * 0.8 + Vector3.new(0, upwardPower * 0.6, 0)
                     game:GetService("Debris"):AddItem(bv, 1.0)
                     
-                    -- 6. Дополнительный толчок через BodyForce
-                    local bf = Instance.new("BodyForce")
-                    bf.Parent = targetRoot
-                    bf.Force = dir * power * 10 + Vector3.new(0, upwardPower * 15, 0)
-                    game:GetService("Debris"):AddItem(bf, 0.8)
+                    -- Телепорт вверх
+                    targetRoot.Position = targetRoot.Position + Vector3.new(0, 15, 0)
                     
-                    -- 7. Телепорт вверх (чтобы точно не упал)
-                    targetRoot.Position = targetRoot.Position + Vector3.new(0, 10, 0)
-                    
-                    -- 8. Урон (как в дропкике)
+                    -- Урон
                     targetHumanoid.Health = targetHumanoid.Health - math.random(10, 25)
                     
-                    -- 9. Эффект удара (свечение)
+                    -- Эффект удара
                     local flash = Instance.new("Part")
                     flash.Size = Vector3.new(8, 8, 8)
                     flash.Shape = Enum.PartType.Ball
@@ -101,21 +127,18 @@ local function dropkickPlayers(centerPos)
                     flash.Anchored = true
                     flash.Parent = workspace
                     game:GetService("Debris"):AddItem(flash, 0.5)
-                    
-                    -- 10. Звук (если есть)
-                    -- local sound = Instance.new("Sound")
-                    -- sound.SoundId = "rbxassetid://9120392076"
-                    -- sound.Parent = targetRoot
-                    -- sound:Play()
                 end
             end
         end
     end
+    
+    -- ВЫКЛЮЧАЕМ NOCLIP через 0.5 секунды
+    task.wait(0.5)
+    disableNoClip()
 end
 
 -- ========== ВИЗУАЛЬНЫЙ ВЗРЫВ ==========
 local function createExplosionVisual(centerPos)
-    -- Вспышка (без урона)
     local exp = Instance.new("Explosion")
     exp.Position = centerPos
     exp.BlastRadius = 35
@@ -123,7 +146,6 @@ local function createExplosionVisual(centerPos)
     exp.ExplosionType = Enum.ExplosionType.NoCraters
     exp.Parent = workspace
     
-    -- Свет
     local light = Instance.new("PointLight")
     light.Parent = workspace.Terrain
     light.Position = centerPos
@@ -132,7 +154,6 @@ local function createExplosionVisual(centerPos)
     light.Brightness = 15
     game:GetService("Debris"):AddItem(light, 0.6)
     
-    -- Частицы взрыва
     for i = 1, 50 do
         local p = Instance.new("Part")
         p.Size = Vector3.new(2, 2, 2)
@@ -156,7 +177,7 @@ local function createExplosionVisual(centerPos)
     end
 end
 
--- ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+-- ========== АКТИВАЦИЯ ==========
 local function activateDropKick()
     if not character or not humanoidRootPart then
         character = player.Character or player.CharacterAdded:Wait()
@@ -164,18 +185,17 @@ local function activateDropKick()
         humanoid = character:WaitForChild("Humanoid")
     end
     
-    -- Бессмертие
     godMode()
     
     local pos = humanoidRootPart.Position
     
-    -- Визуал взрыва
+    -- Визуал
     createExplosionVisual(pos)
     
-    -- Отбрасываем игроков (техника DropKick)
+    -- DropKick + NoClip
     dropkickPlayers(pos)
     
-    -- Повторная защита
+    -- Защита
     task.wait(0.1)
     godMode()
     
@@ -192,7 +212,6 @@ local function activateDropKick()
         end
     end
     
-    -- Уведомление
     local notif = Instance.new("TextLabel")
     notif.Parent = player.PlayerGui
     notif.Size = UDim2.new(0, 350, 0, 50)
@@ -216,10 +235,12 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid = character:WaitForChild("Humanoid")
     task.wait(0.3)
     godMode()
+    enableNoClip()
 end)
 
 -- ========== АКТИВАЦИЯ ==========
 godMode()
+enableNoClip() -- Включаем NoClip сразу
 
-print("✅ MOD BY ROSE V2.1 | DROPKICK + ВЗРЫВ АКТИВИРОВАН")
+print("✅ MOD BY ROSE V2.1 | DROPKICK + NOCLIP + ВЗРЫВ")
 print("📱 Telegram: https://t.me/rosemod_deep")
