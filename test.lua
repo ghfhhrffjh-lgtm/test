@@ -1,5 +1,6 @@
 -- MOD BY ROSE V2.1 | MAX CODING
 -- IRON MAN FLIGHT (Custom Joystick, 3D управление по камере)
+-- Джойстик справа, чуть выше середины
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
@@ -8,9 +9,9 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
 
 -- ========== НАСТРОЙКИ ==========
-local maxSpeed = 80           -- максимальная скорость полёта
-local deadZone = 0.15         -- мёртвая зона джойстика
-local forwardBias = 0.7       -- коэффициент движения вперёд (чтобы не улетать слишком быстро)
+local maxSpeed = 80
+local deadZone = 0.15
+local forwardBias = 0.7
 
 -- ========== ПЕРЕМЕННЫЕ ==========
 local flying = false
@@ -18,7 +19,7 @@ local flightConnection = nil
 local bodyVelocity = nil
 local bodyGyro = nil
 local joystickActive = false
-local joystickDir = Vector3.new(0, 0, 0) -- (X, Y) на экране
+local joystickDir = Vector3.new(0, 0, 0)
 
 -- ========== GUI ==========
 local gui = Instance.new("ScreenGui")
@@ -26,11 +27,11 @@ gui.Parent = player.PlayerGui
 gui.ResetOnSpawn = false
 gui.Name = "IronManGUI"
 
--- Кнопка ВЗЛЁТ/ПОСАДКА
+-- Кнопка ВЗЛЁТ/ПОСАДКА (оставим слева вверху, чтобы не мешала джойстику)
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = gui
 toggleBtn.Size = UDim2.new(0, 120, 0, 50)
-toggleBtn.Position = UDim2.new(0.8, 0, 0.05, 0)
+toggleBtn.Position = UDim2.new(0.02, 0, 0.05, 0) -- слева вверху
 toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
 toggleBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
 toggleBtn.Text = "🦾 ВЗЛЁТ"
@@ -39,11 +40,11 @@ toggleBtn.TextSize = 18
 toggleBtn.BorderSizePixel = 0
 toggleBtn.BackgroundTransparency = 0.2
 
--- Рамка джойстика
+-- Рамка джойстика (справа, чуть выше середины)
 local joystickFrame = Instance.new("Frame")
 joystickFrame.Parent = gui
 joystickFrame.Size = UDim2.new(0, 150, 0, 150)
-joystickFrame.Position = UDim2.new(0.05, 0, 0.5, -75)
+joystickFrame.Position = UDim2.new(0.75, -75, 0.38, -75) -- привязка к центру фрейма
 joystickFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 joystickFrame.BackgroundTransparency = 0.8
 joystickFrame.BorderSizePixel = 2
@@ -99,23 +100,18 @@ local function updateFlight()
     local right = camCF.RightVector
     local up = camCF.UpVector
 
-    -- Направление: вперёд (по камере) + вправо/влево + вверх/вниз
     local dirNorm = dir.Unit
-    -- dirNorm.X — влево/вправо, dirNorm.Y — вверх/вниз (на экране)
-    -- Преобразуем: вперёд берём с коэффициентом, чтобы не улетать слишком быстро
     local velocity = forward * forwardBias + right * dirNorm.X + up * dirNorm.Y
-    velocity = velocity.Unit * maxSpeed  -- сохраняем максимальную скорость
+    velocity = velocity.Unit * maxSpeed
 
     bodyVelocity.Velocity = velocity
 
-    -- Поворачиваем персонажа в направлении движения (по горизонтали)
     local horizDir = Vector3.new(velocity.X, 0, velocity.Z)
     if horizDir.Magnitude > 0.5 then
         local lookAt = rootPart.Position + horizDir.Unit * 10
         bodyGyro.CFrame = CFrame.lookAt(rootPart.Position, lookAt)
     end
 
-    -- Эффекты струй при вертикальном движении
     if dirNorm.Y > 0.2 then
         createJetEffect(rootPart.Position - Vector3.new(0, 2, 0), Vector3.new(0, -1, 0))
     elseif dirNorm.Y < -0.2 then
@@ -123,7 +119,7 @@ local function updateFlight()
     end
 end
 
--- ========== ЗАПУСК ПОЛЁТА ==========
+-- ========== ЗАПУСК ==========
 local function startFlight()
     if flying then return end
     flying = true
@@ -176,7 +172,7 @@ local function stopFlight()
     print("🛬 Flight deactivated.")
 end
 
--- ========== ОБРАБОТКА ТАЧА (ДЖОЙСТИК) ==========
+-- ========== ОБРАБОТКА ТАЧА ==========
 local joystickCenter = nil
 
 local function onTouchStart(input, gameProcessed)
@@ -211,7 +207,7 @@ end
 local function updateJoystick(input)
     if not joystickCenter then return end
     local delta = input.Position - joystickCenter
-    local maxDelta = 60  -- радиус
+    local maxDelta = 60
     local clamped = delta.Unit * math.min(delta.Magnitude, maxDelta)
     joystickDir = clamped / maxDelta
     knob.Position = UDim2.new(0.5, clamped.X, 0.5, clamped.Y)
@@ -235,5 +231,5 @@ player.CharacterAdded:Connect(function(newChar)
     if flying then stopFlight() end
 end)
 
-print("✅ MOD BY ROSE | IRON MAN FLIGHT (CUSTOM JOYSTICK, 3D) LOADED")
+print("✅ MOD BY ROSE | IRON MAN FLIGHT (JOYSTICK RIGHT-UP) LOADED")
 print("📱 Telegram: https://t.me/rosemod_deep")
