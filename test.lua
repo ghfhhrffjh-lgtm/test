@@ -1,5 +1,5 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- IRON MAN FLIGHT (использует стандартный джойстик Roblox)
+-- IRON MAN FLIGHT (Custom Joystick, 3D управление по камере)
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
@@ -8,22 +8,25 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
 
 -- ========== НАСТРОЙКИ ==========
-local forwardSpeed = 50        -- постоянная скорость вперёд (можно менять)
-local maxLateralSpeed = 60     -- скорость влево/вправо (от джойстика)
-local maxVerticalSpeed = 50    -- скорость вверх/вниз (от джойстика)
+local maxSpeed = 80           -- максимальная скорость полёта
+local deadZone = 0.15         -- мёртвая зона джойстика
+local forwardBias = 0.7       -- коэффициент движения вперёд (чтобы не улетать слишком быстро)
 
 -- ========== ПЕРЕМЕННЫЕ ==========
 local flying = false
 local flightConnection = nil
 local bodyVelocity = nil
 local bodyGyro = nil
+local joystickActive = false
+local joystickDir = Vector3.new(0, 0, 0) -- (X, Y) на экране
 
--- ========== СОЗДАНИЕ КНОПКИ ВКЛ/ВЫКЛ ==========
+-- ========== GUI ==========
 local gui = Instance.new("ScreenGui")
 gui.Parent = player.PlayerGui
 gui.ResetOnSpawn = false
 gui.Name = "IronManGUI"
 
+-- Кнопка ВЗЛЁТ/ПОСАДКА
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = gui
 toggleBtn.Size = UDim2.new(0, 120, 0, 50)
@@ -36,20 +39,87 @@ toggleBtn.TextSize = 18
 toggleBtn.BorderSizePixel = 0
 toggleBtn.BackgroundTransparency = 0.2
 
--- ========== ФУНКЦИЯ ЭФФЕКТОВ СТРУЙ ==========
+-- Рамка джойстика
+local joystickFrame = Instance.new("Frame")
+joystickFrame.Parent = gui
+joystickFrame.Size = UDim2.new(0, 150, 0, 150)
+joystickFrame.Position = UDim2.new(0.05, 0, 0.5, -75)
+joystickFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+joystickFrame.BackgroundTransparency = 0.8
+joystickFrame.BorderSizePixel = 2
+joystickFrame.BorderColor3 = Color3.fromRGB(200, 200, 200)
+joystickFrame.Visible = false
+local corner = Instance.new("UICorner")
+corner.Parent = joystickFrame
+corner.CornerRadius = UDim.new(1, 0)
+
+-- Кружок (индикатор)
+local knob = Instance.new("Frame")
+knob.Parent = joystickFrame
+knob.Size = UDim2.new(0, 40, 0, 40)
+knob.Position = UDim2.new(0.5, -20, 0.5, -20)
+knob.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+knob.BackgroundTransparency = 0.4
+knob.BorderSizePixel = 0
+local knobCorner = Instance.new("UICorner")
+knobCorner.Parent = knob
+knobCorner.CornerRadius = UDim.new(1, 0)
+
+-- ========== ЭФФЕКТЫ СТРУЙ ==========
 local function createJetEffect(position, direction)
-    for i = 1, 3 do
+    for i = 1, 4 do
         local p = Instance.new("Part")
         p.Size = Vector3.new(1, 1, 1)
         p.Shape = Enum.PartType.Ball
         p.Material = Enum.Material.Neon
         p.BrickColor = BrickColor.new("Bright orange")
         p.Position = position + direction * 2
-        p.Velocity = -direction * math.random(40, 100) + Vector3.new(math.random(-10,10), math.random(-10,10), math.random(-10,10))
+        p.Velocity = -direction * math.random(40, 120) + Vector3.new(math.random(-15,15), math.random(-15,15), math.random(-15,15))
         p.CanCollide = false
         p.Anchored = false
         p.Parent = workspace
-        game:GetService("Debris"):AddItem(p, 0.5)
+        game:GetService("Debris"):AddItem(p, 0.6)
+    end
+end
+
+-- ========== ОБНОВЛЕНИЕ ПОЛЁТА ==========
+local function updateFlight()
+    if not flying or not bodyVelocity then return end
+
+    local dir = joystickDir
+    if dir.Magnitude < deadZone then
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    local camCF = camera.CFrame
+    local forward = -camCF.LookVector
+    local right = camCF.RightVector
+    local up = camCF.UpVector
+
+    -- Направление: вперёд (по камере) + вправо/влево + вверх/вниз
+    local dirNorm = dir.Unit
+    -- dirNorm.X — влево/вправо, dirNorm.Y — вверх/вниз (на экране)
+    -- Преобразуем: вперёд берём с коэффициентом, чтобы не улетать слишком быстро
+    local velocity = forward * forwardBias + right * dirNorm.X + up * dirNorm.Y
+    velocity = velocity.Unit * maxSpeed  -- сохраняем максимальную скорость
+
+    bodyVelocity.Velocity = velocity
+
+    -- Поворачиваем персонажа в направлении движения (по горизонтали)
+    local horizDir = Vector3.new(velocity.X, 0, velocity.Z)
+    if horizDir.Magnitude > 0.5 then
+        local lookAt = rootPart.Position + horizDir.Unit * 10
+        bodyGyro.CFrame = CFrame.lookAt(rootPart.Position, lookAt)
+    end
+
+    -- Эффекты струй при вертикальном движении
+    if dirNorm.Y > 0.2 then
+        createJetEffect(rootPart.Position - Vector3.new(0, 2, 0), Vector3.new(0, -1, 0))
+    elseif dirNorm.Y < -0.2 then
+        createJetEffect(rootPart.Position + Vector3.new(0, 2, 0), Vector3.new(0, 1, 0))
     end
 end
 
@@ -59,96 +129,33 @@ local function startFlight()
     flying = true
     toggleBtn.Text = "🛬 ПОСАДКА"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    joystickFrame.Visible = true
 
-    -- Отключаем стандартное управление и гравитацию
     humanoid.PlatformStand = true
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 
-    -- BodyVelocity для управления скоростью
     bodyVelocity = Instance.new("BodyVelocity")
     bodyVelocity.Parent = rootPart
     bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-    
-    -- BodyGyro для поворотов
+
     bodyGyro = Instance.new("BodyGyro")
     bodyGyro.Parent = rootPart
     bodyGyro.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
 
-    -- Цикл обновления (читаем джойстик каждый кадр)
-    flightConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        if not flying or not character or not rootPart then
-            stopFlight()
-            return
-        end
-
-        -- Получаем направление от стандартного джойстика
-        local moveDir = humanoid.MoveDirection  -- это Vector3 (X, 0, Z) на плоскости
-
-        -- Преобразуем в координаты камеры
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        local camCF = camera.CFrame
-
-        -- Раскладываем moveDir на компоненты в пространстве камеры
-        -- moveDir.X - это влево/вправо (в локальных осях камеры?)
-        -- На самом деле MoveDirection уже в мировых координатах, но мы хотим, чтобы вперёд было по камере.
-        -- Поэтому мы преобразуем moveDir в локальные координаты камеры.
-        local localDir = camCF:VectorToObjectSpace(moveDir) -- (X, Y, Z) в системе камеры
-        
-        -- Теперь localDir.X - влево/вправо, localDir.Z - вперёд/назад (отрицательный Z - вперёд)
-        -- Но мы хотим, чтобы localDir.Y отвечал за вертикаль.
-        -- Вместо этого мы используем localDir.Z для вертикали (если джойстик тянем вперёд - подъём, назад - спуск)
-        -- И localDir.X для горизонтального поворота.
-        -- А также всегда добавляем постоянную скорость вперёд.
-        
-        -- Собираем вектор скорости в мировых координатах:
-        -- Вперёд (постоянно) + вертикаль (от localDir.Z) + горизонталь (от localDir.X)
-        local forwardWorld = camCF.LookVector  -- направление вперёд (камера)
-        local rightWorld = camCF.RightVector
-        local upWorld = camCF.UpVector
-
-        -- Вертикаль: чем сильнее тянем джойстик вперёд (localDir.Z > 0), тем больше подъём
-        -- localDir.Z: если положительный - вперёд (по камере), отрицательный - назад
-        local verticalInput = -localDir.Z  -- инвертируем, чтобы вперёд = вверх
-        local verticalVelocity = upWorld * verticalInput * maxVerticalSpeed
-
-        -- Горизонтальный поворот (влево-вправо)
-        local lateralVelocity = rightWorld * localDir.X * maxLateralSpeed
-
-        -- Постоянная скорость вперёд (можно настроить)
-        local constantForward = forwardWorld * forwardSpeed
-
-        -- Итоговая скорость
-        local finalVelocity = constantForward + lateralVelocity + verticalVelocity
-
-        -- Применяем
-        bodyVelocity.Velocity = finalVelocity
-
-        -- Поворачиваем персонажа в направлении движения (по горизонтали)
-        local horizDir = Vector3.new(finalVelocity.X, 0, finalVelocity.Z)
-        if horizDir.Magnitude > 0.5 then
-            local lookAt = rootPart.Position + horizDir.Unit * 10
-            bodyGyro.CFrame = CFrame.lookAt(rootPart.Position, lookAt)
-        end
-
-        -- Эффекты струй при вертикальном движении
-        if verticalInput > 0.2 then
-            createJetEffect(rootPart.Position - Vector3.new(0, 2, 0), Vector3.new(0, -1, 0))
-        elseif verticalInput < -0.2 then
-            createJetEffect(rootPart.Position + Vector3.new(0, 2, 0), Vector3.new(0, 1, 0))
-        end
-    end)
-
-    print("🦾 Iron Man Flight ACTIVATED (Built-in joystick)")
+    flightConnection = game:GetService("RunService").Heartbeat:Connect(updateFlight)
+    print("🦾 Iron Man Flight ACTIVATED")
 end
 
--- ========== ОСТАНОВКА ПОЛЁТА ==========
+-- ========== ОСТАНОВКА ==========
 local function stopFlight()
     if not flying then return end
     flying = false
     toggleBtn.Text = "🦾 ВЗЛЁТ"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+    joystickFrame.Visible = false
+    joystickDir = Vector3.new(0, 0, 0)
+    knob.Position = UDim2.new(0.5, -20, 0.5, -20)
 
     if flightConnection then
         flightConnection:Disconnect()
@@ -166,9 +173,54 @@ local function stopFlight()
     humanoid.PlatformStand = false
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-
     print("🛬 Flight deactivated.")
 end
+
+-- ========== ОБРАБОТКА ТАЧА (ДЖОЙСТИК) ==========
+local joystickCenter = nil
+
+local function onTouchStart(input, gameProcessed)
+    if gameProcessed then return end
+    if not flying then return end
+    local pos = input.Position
+    local framePos = joystickFrame.AbsolutePosition
+    local frameSize = joystickFrame.AbsoluteSize
+    if pos.X >= framePos.X and pos.X <= framePos.X + frameSize.X and
+       pos.Y >= framePos.Y and pos.Y <= framePos.Y + frameSize.Y then
+        joystickActive = true
+        joystickCenter = framePos + frameSize / 2
+        updateJoystick(input)
+    end
+end
+
+local function onTouchMove(input, gameProcessed)
+    if gameProcessed then return end
+    if not flying or not joystickActive then return end
+    updateJoystick(input)
+end
+
+local function onTouchEnd(input, gameProcessed)
+    if gameProcessed then return end
+    if joystickActive then
+        joystickActive = false
+        joystickDir = Vector3.new(0, 0, 0)
+        knob.Position = UDim2.new(0.5, -20, 0.5, -20)
+    end
+end
+
+local function updateJoystick(input)
+    if not joystickCenter then return end
+    local delta = input.Position - joystickCenter
+    local maxDelta = 60  -- радиус
+    local clamped = delta.Unit * math.min(delta.Magnitude, maxDelta)
+    joystickDir = clamped / maxDelta
+    knob.Position = UDim2.new(0.5, clamped.X, 0.5, clamped.Y)
+end
+
+local uis = game:GetService("UserInputService")
+uis.TouchStarted:Connect(onTouchStart)
+uis.TouchMoved:Connect(onTouchMove)
+uis.TouchEnded:Connect(onTouchEnd)
 
 -- ========== КНОПКА ==========
 toggleBtn.MouseButton1Click:Connect(function()
@@ -183,5 +235,5 @@ player.CharacterAdded:Connect(function(newChar)
     if flying then stopFlight() end
 end)
 
-print("✅ MOD BY ROSE | IRON MAN FLIGHT (STANDARD JOYSTICK) LOADED")
+print("✅ MOD BY ROSE | IRON MAN FLIGHT (CUSTOM JOYSTICK, 3D) LOADED")
 print("📱 Telegram: https://t.me/rosemod_deep")
