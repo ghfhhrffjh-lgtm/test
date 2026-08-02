@@ -1,5 +1,5 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- FLESH MODE v2 (20 молний, отбрасывание врагов, бессмертие)
+-- FLESH MODE v3 (Непрозрачные молнии, видимые всем, отбрасывают врагов)
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
@@ -47,9 +47,7 @@ local function protectPlayer()
     if not character or not humanoid then return end
     humanoid.Health = humanoid.MaxHealth
     humanoid.BreakJointsOnDeath = false
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 end
 
 local function startProtection()
@@ -68,19 +66,23 @@ local function stopProtection()
     end
 end
 
--- ========== СОЗДАНИЕ МОЛНИЙ ==========
+-- ========== СОЗДАНИЕ МОЛНИЙ (НЕПРОЗРАЧНЫЕ) ==========
 local function createLightningPart()
     local part = Instance.new("Part")
-    part.Size = Vector3.new(0.5, 0.5, 2 + math.random()*4)
+    part.Size = Vector3.new(0.8, 0.8, 4 + math.random()*6)  -- крупнее
     part.Shape = Enum.PartType.Block
     part.Material = Enum.Material.Neon
     part.BrickColor = BrickColor.new("Bright blue")
     part.Anchored = false
-    part.CanCollide = true
-    part.Transparency = 0.2
-    part.AssemblyAngularVelocity = Vector3.new(math.random(-10,10), math.random(-10,10), math.random(-10,10))
-    local dir = Vector3.new(math.random(-1,1), math.random(-0.5,0.5), math.random(-1,1)).Unit
-    part.Velocity = dir * 20
+    part.CanCollide = true   -- теперь сталкиваются с игроками
+    part.Transparency = 0    -- полностью непрозрачные
+    part.AssemblyAngularVelocity = Vector3.new(math.random(-15,15), math.random(-15,15), math.random(-15,15))
+    -- Добавляем яркий свет
+    local light = Instance.new("PointLight")
+    light.Parent = part
+    light.Color = Color3.fromRGB(0, 150, 255)
+    light.Range = 15
+    light.Brightness = 5
     return part
 end
 
@@ -99,17 +101,19 @@ local function spawnLightning()
                 local targetHumanoid = hitParent:FindFirstChild("Humanoid")
                 local targetRoot = hitParent:FindFirstChild("HumanoidRootPart")
                 if targetHumanoid and targetHumanoid.Health > 0 and targetRoot then
-                    local pushForce = 5000
+                    local pushForce = 8000  -- увеличенная сила
                     local direction = (targetRoot.Position - rootPart.Position).Unit
                     if direction.Magnitude < 0.5 then
                         direction = Vector3.new(math.random(-1,1), math.random(0.5,1), math.random(-1,1)).Unit
                     end
-                    targetRoot.AssemblyLinearVelocity = direction * pushForce + Vector3.new(0, 1000, 0)
+                    targetRoot.AssemblyLinearVelocity = direction * pushForce + Vector3.new(0, 2000, 0)
                     local bv = Instance.new("BodyVelocity")
                     bv.Parent = targetRoot
                     bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
-                    bv.Velocity = direction * pushForce + Vector3.new(0, 2000, 0)
+                    bv.Velocity = direction * pushForce + Vector3.new(0, 3000, 0)
                     game:GetService("Debris"):AddItem(bv, 0.5)
+                    -- Урон (необязательно)
+                    targetHumanoid.Health = targetHumanoid.Health - 10
                 end
             end
         end)
@@ -135,12 +139,12 @@ local function updateLightning()
     for i, part in ipairs(lightningParts) do
         if part and part.Parent then
             local angle = math.rad(i * 18 + os.clock() * 30)
-            local radius = 5 + math.sin(os.clock() + i) * 1.5
-            local heightOffset = math.sin(os.clock() * 2 + i) * 2
+            local radius = 6 + math.sin(os.clock() + i) * 2
+            local heightOffset = math.sin(os.clock() * 2 + i) * 3
             local targetPos = rootPart.Position + Vector3.new(math.cos(angle)*radius, heightOffset, math.sin(angle)*radius)
-            part.Position = part.Position + (targetPos - part.Position) * 0.15
-            part.Orientation = Vector3.new(math.sin(os.clock()+i)*30, os.clock()*50, math.cos(os.clock()+i)*30)
-            part.Velocity = (targetPos - part.Position) * 3 + Vector3.new(math.random(-5,5), math.random(-5,5), math.random(-5,5))
+            part.Position = part.Position + (targetPos - part.Position) * 0.12
+            part.Orientation = Vector3.new(math.sin(os.clock()+i)*40, os.clock()*60, math.cos(os.clock()+i)*40)
+            part.Velocity = (targetPos - part.Position) * 2 + Vector3.new(math.random(-10,10), math.random(-10,10), math.random(-10,10))
         end
     end
 end
@@ -194,5 +198,5 @@ player.CharacterAdded:Connect(function(newChar)
     end
 end)
 
-print("✅ MOD BY ROSE | FLESH MODE v2 LOADED")
+print("✅ MOD BY ROSE | FLESH MODE v3 LOADED (Непрозрачные молнии)")
 print("📱 Telegram: https://t.me/rosemod_deep")
