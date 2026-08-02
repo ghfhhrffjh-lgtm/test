@@ -1,202 +1,161 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- FLESH MODE v3 (Непрозрачные молнии, видимые всем, отбрасывают врагов)
+-- DROPKICK SCRIPT (Оригинальная механика + кнопка)
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
 
 -- ========== НАСТРОЙКИ ==========
-local normalSpeed = 16
-local flashSpeed = 200
-local normalJump = 50
-local flashJump = 150
-local isFlash = false
-
-local lightningParts = {}
-local lightningConnection = nil
-local protectConnection = nil
+local kickForce = 150          -- сила пинка (чем выше, тем дальше летят)
+local upwardForce = 80         -- дополнительная сила вверх
+local range = 25               -- радиус действия (в стопах)
+local duration = 0.8           -- время, в течение которого ты прозрачен и невидим
 
 -- ========== GUI ==========
 local gui = Instance.new("ScreenGui")
 gui.Parent = player.PlayerGui
 gui.ResetOnSpawn = false
-gui.Name = "FlashGUI"
+gui.Name = "DropKickGUI"
 
 local button = Instance.new("TextButton")
 button.Parent = gui
 button.Size = UDim2.new(0, 100, 0, 100)
-button.Position = UDim2.new(0.85, 0, 0.5, -50)
-button.BackgroundColor3 = Color3.fromRGB(128, 0, 255)
-button.BackgroundTransparency = 0.1
+button.Position = UDim2.new(0.85, 0, 0.5, -50)  -- справа
+button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)  -- красный
+button.BackgroundTransparency = 0.2
 button.BorderColor3 = Color3.fromRGB(0, 0, 0)
-button.BorderSizePixel = 4
-button.Text = "FLESH"
+button.BorderSizePixel = 3
+button.Text = "🦵\nKICK"
 button.TextColor3 = Color3.fromRGB(255, 255, 255)
 button.TextScaled = true
 button.Font = Enum.Font.GothamBold
 button.TextSize = 30
-
 local corner = Instance.new("UICorner")
 corner.Parent = button
 corner.CornerRadius = UDim.new(0, 15)
 
--- ========== ЗАЩИТА ОТ СМЕРТИ ==========
-local function protectPlayer()
-    if not character or not humanoid then return end
-    humanoid.Health = humanoid.MaxHealth
-    humanoid.BreakJointsOnDeath = false
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-end
-
-local function startProtection()
-    if protectConnection then return end
-    protectConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        if isFlash and character and humanoid then
-            protectPlayer()
+-- ========== NOCLIP (прохождение сквозь стены/игроков) ==========
+local function setNoClip(state)
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not state
+            if state then
+                part.Transparency = 0.5  -- прозрачность как в оригинале
+            else
+                part.Transparency = 0
+            end
         end
-    end)
-end
-
-local function stopProtection()
-    if protectConnection then
-        protectConnection:Disconnect()
-        protectConnection = nil
     end
 end
 
--- ========== СОЗДАНИЕ МОЛНИЙ (НЕПРОЗРАЧНЫЕ) ==========
-local function createLightningPart()
-    local part = Instance.new("Part")
-    part.Size = Vector3.new(0.8, 0.8, 4 + math.random()*6)  -- крупнее
-    part.Shape = Enum.PartType.Block
-    part.Material = Enum.Material.Neon
-    part.BrickColor = BrickColor.new("Bright blue")
-    part.Anchored = false
-    part.CanCollide = true   -- теперь сталкиваются с игроками
-    part.Transparency = 0    -- полностью непрозрачные
-    part.AssemblyAngularVelocity = Vector3.new(math.random(-15,15), math.random(-15,15), math.random(-15,15))
-    -- Добавляем яркий свет
-    local light = Instance.new("PointLight")
-    light.Parent = part
-    light.Color = Color3.fromRGB(0, 150, 255)
-    light.Range = 15
-    light.Brightness = 5
-    return part
-end
-
-local function spawnLightning()
-    clearLightning()
-    for i = 1, 20 do
-        local part = createLightningPart()
-        part.Parent = workspace
-        local angle = math.rad(i * 18 + math.random(-5,5))
-        local radius = 5 + math.random()*3
-        part.Position = rootPart.Position + Vector3.new(math.cos(angle)*radius, math.random(-2,4), math.sin(angle)*radius)
-        part.Touched:Connect(function(hit)
-            if not isFlash then return end
-            local hitParent = hit.Parent
-            if hitParent and hitParent:FindFirstChild("Humanoid") and hitParent ~= character then
-                local targetHumanoid = hitParent:FindFirstChild("Humanoid")
-                local targetRoot = hitParent:FindFirstChild("HumanoidRootPart")
-                if targetHumanoid and targetHumanoid.Health > 0 and targetRoot then
-                    local pushForce = 8000  -- увеличенная сила
-                    local direction = (targetRoot.Position - rootPart.Position).Unit
-                    if direction.Magnitude < 0.5 then
-                        direction = Vector3.new(math.random(-1,1), math.random(0.5,1), math.random(-1,1)).Unit
+-- ========== ОТБРАСЫВАНИЕ ИГРОКОВ ==========
+local function kickPlayers()
+    local center = rootPart.Position
+    for _, plr in ipairs(game.Players:GetPlayers()) do
+        if plr ~= player then
+            local targetChar = plr.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                local targetHumanoid = targetChar:FindFirstChild("Humanoid")
+                if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                    local dist = (targetRoot.Position - center).Magnitude
+                    if dist < range then
+                        -- Направление от центра
+                        local dir = (targetRoot.Position - center).Unit
+                        if dist < 0.5 then
+                            dir = Vector3.new(math.random(-1,1), 1, math.random(-1,1)).Unit
+                        end
+                        -- Сила с учётом расстояния
+                        local power = kickForce * (1 + (range - dist) / range)
+                        -- Отбрасывание
+                        targetRoot.Velocity = Vector3.new(0,0,0)
+                        targetRoot.AssemblyLinearVelocity = dir * power + Vector3.new(0, upwardForce * (1 + (range - dist) / range), 0)
+                        -- Дополнительный импульс
+                        local bv = Instance.new("BodyVelocity")
+                        bv.Parent = targetRoot
+                        bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+                        bv.Velocity = dir * power * 0.8 + Vector3.new(0, upwardForce * 0.6, 0)
+                        game:GetService("Debris"):AddItem(bv, 0.8)
+                        -- Визуальный эффект удара
+                        local flash = Instance.new("Part")
+                        flash.Size = Vector3.new(6, 6, 6)
+                        flash.Shape = Enum.PartType.Ball
+                        flash.Material = Enum.Material.Neon
+                        flash.BrickColor = BrickColor.new("Bright red")
+                        flash.Position = targetRoot.Position
+                        flash.CanCollide = false
+                        flash.Anchored = true
+                        flash.Parent = workspace
+                        game:GetService("Debris"):AddItem(flash, 0.5)
                     end
-                    targetRoot.AssemblyLinearVelocity = direction * pushForce + Vector3.new(0, 2000, 0)
-                    local bv = Instance.new("BodyVelocity")
-                    bv.Parent = targetRoot
-                    bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
-                    bv.Velocity = direction * pushForce + Vector3.new(0, 3000, 0)
-                    game:GetService("Debris"):AddItem(bv, 0.5)
-                    -- Урон (необязательно)
-                    targetHumanoid.Health = targetHumanoid.Health - 10
                 end
             end
-        end)
-        table.insert(lightningParts, part)
-    end
-end
-
-local function clearLightning()
-    for _, part in ipairs(lightningParts) do
-        if part and part.Parent then
-            part:Destroy()
-        end
-    end
-    lightningParts = {}
-end
-
--- ========== ОБНОВЛЕНИЕ МОЛНИЙ ==========
-local function updateLightning()
-    if not isFlash then
-        clearLightning()
-        return
-    end
-    for i, part in ipairs(lightningParts) do
-        if part and part.Parent then
-            local angle = math.rad(i * 18 + os.clock() * 30)
-            local radius = 6 + math.sin(os.clock() + i) * 2
-            local heightOffset = math.sin(os.clock() * 2 + i) * 3
-            local targetPos = rootPart.Position + Vector3.new(math.cos(angle)*radius, heightOffset, math.sin(angle)*radius)
-            part.Position = part.Position + (targetPos - part.Position) * 0.12
-            part.Orientation = Vector3.new(math.sin(os.clock()+i)*40, os.clock()*60, math.cos(os.clock()+i)*40)
-            part.Velocity = (targetPos - part.Position) * 2 + Vector3.new(math.random(-10,10), math.random(-10,10), math.random(-10,10))
         end
     end
 end
 
--- ========== ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ ==========
-local function toggleFlash()
-    if not character or not humanoid then
+-- ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+local function performKick()
+    if not character or not rootPart then
         character = player.Character or player.CharacterAdded:Wait()
-        humanoid = character:WaitForChild("Humanoid")
         rootPart = character:WaitForChild("HumanoidRootPart")
+        humanoid = character:WaitForChild("Humanoid")
     end
 
-    isFlash = not isFlash
+    -- Включаем NoClip (проходим сквозь всех)
+    setNoClip(true)
+    -- Защита от смерти (на всякий случай)
+    humanoid.Health = humanoid.MaxHealth
 
-    if isFlash then
-        humanoid.WalkSpeed = flashSpeed
-        humanoid.JumpPower = flashJump
-        spawnLightning()
-        if not lightningConnection then
-            lightningConnection = game:GetService("RunService").Heartbeat:Connect(updateLightning)
+    -- Небольшая задержка для эффекта
+    task.wait(0.1)
+
+    -- Отбрасываем игроков
+    kickPlayers()
+
+    -- Тряска камеры
+    if player:FindFirstChild("Camera") then
+        local cam = player.Camera
+        for i = 1, 5 do
+            cam.CFrame = cam.CFrame * CFrame.Angles(
+                math.rad(math.random(-5,5)),
+                math.rad(math.random(-5,5)),
+                math.rad(math.random(-3,3))
+            )
+            task.wait(0.02)
         end
-        startProtection()
-        button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-        button.Text = "⚡FLESH"
-        print("⚡ Flash mode ON")
-    else
-        humanoid.WalkSpeed = normalSpeed
-        humanoid.JumpPower = normalJump
-        clearLightning()
-        if lightningConnection then
-            lightningConnection:Disconnect()
-            lightningConnection = nil
-        end
-        stopProtection()
-        button.BackgroundColor3 = Color3.fromRGB(128, 0, 255)
-        button.Text = "FLESH"
-        print("🛑 Flash mode OFF")
     end
+
+    -- Возвращаем коллизию через duration секунд
+    task.wait(duration)
+    setNoClip(false)
+
+    -- Уведомление
+    local notif = Instance.new("TextLabel")
+    notif.Parent = player.PlayerGui
+    notif.Size = UDim2.new(0, 250, 0, 50)
+    notif.Position = UDim2.new(0.4, 0, 0.8, 0)
+    notif.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    notif.TextColor3 = Color3.fromRGB(255, 255, 255)
+    notif.Text = "🦵 DROPKICK!"
+    notif.TextScaled = true
+    notif.BackgroundTransparency = 0.4
+    task.wait(1.5)
+    notif:Destroy()
 end
 
-button.MouseButton1Click:Connect(toggleFlash)
+-- ========== ПРИВЯЗКА К КНОПКЕ ==========
+button.MouseButton1Click:Connect(performKick)
 
 -- ========== ЗАЩИТА ПРИ РЕСПАВНЕ ==========
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
-    humanoid = character:WaitForChild("Humanoid")
     rootPart = character:WaitForChild("HumanoidRootPart")
-    if isFlash then
-        isFlash = false
-        toggleFlash()
-    end
+    humanoid = character:WaitForChild("Humanoid")
+    setNoClip(false)  -- сбрасываем на всякий случай
 end)
 
-print("✅ MOD BY ROSE | FLESH MODE v3 LOADED (Непрозрачные молнии)")
+print("✅ MOD BY ROSE | DROPKICK SCRIPT LOADED")
 print("📱 Telegram: https://t.me/rosemod_deep")
