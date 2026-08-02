@@ -1,245 +1,153 @@
 -- MOD BY ROSE V2.1 | MAX CODING
--- IRON MAN FLIGHT (Working Joystick via UserInputService)
+-- FLESH MODE (Суперскорость как у Флэша)
 -- Telegram: https://t.me/rosemod_deep
 
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- ========== НАСТРОЙКИ ==========
-local maxSpeed = 80
-local deadZone = 0.15
-local forwardBias = 0.7
-local joystickRadius = 60
+local normalSpeed = 16          -- стандартная скорость
+local flashSpeed = 200          -- скорость Флэша
+local normalJump = 50           -- стандартный прыжок
+local flashJump = 150           -- прыжок Флэша
+local isFlash = false           -- состояние
 
--- ========== ПЕРЕМЕННЫЕ ==========
-local flying = false
-local flightConnection = nil
-local bodyVelocity = nil
-local bodyGyro = nil
-local joystickActive = false
-local joystickDir = Vector3.new(0, 0, 0)
-local joystickCenter = nil
-
--- ========== GUI ==========
+-- ========== GUI (КНОПКА) ==========
 local gui = Instance.new("ScreenGui")
 gui.Parent = player.PlayerGui
 gui.ResetOnSpawn = false
-gui.Name = "IronManGUI"
+gui.Name = "FlashGUI"
 
--- Кнопка ВЗЛЁТ/ПОСАДКА
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Parent = gui
-toggleBtn.Size = UDim2.new(0, 120, 0, 50)
-toggleBtn.Position = UDim2.new(0.02, 0, 0.05, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-toggleBtn.TextColor3 = Color3.fromRGB(255, 0, 0)
-toggleBtn.Text = "🦾 ВЗЛЁТ"
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 18
-toggleBtn.BorderSizePixel = 0
-toggleBtn.BackgroundTransparency = 0.2
+-- Основная кнопка
+local button = Instance.new("TextButton")
+button.Parent = gui
+button.Size = UDim2.new(0, 100, 0, 100)          -- квадратная
+button.Position = UDim2.new(0.85, 0, 0.5, -50)   -- справа по центру
+button.BackgroundColor3 = Color3.fromRGB(128, 0, 255) -- фиолетовый
+button.BackgroundTransparency = 0.1
+button.BorderColor3 = Color3.fromRGB(0, 0, 0)    -- чёрная обводка
+button.BorderSizePixel = 4
+button.Text = "FLESH"
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.TextScaled = true
+button.Font = Enum.Font.GothamBold
+button.TextSize = 30
 
--- Фрейм джойстика (только визуал, без обработки)
-local joystickFrame = Instance.new("Frame")
-joystickFrame.Parent = gui
-joystickFrame.Size = UDim2.new(0, 150, 0, 150)
-joystickFrame.Position = UDim2.new(0.75, -75, 0.38, -75)
-joystickFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-joystickFrame.BackgroundTransparency = 0.8
-joystickFrame.BorderSizePixel = 2
-joystickFrame.BorderColor3 = Color3.fromRGB(200, 200, 200)
-joystickFrame.Visible = false
+-- Скруглённые углы (50% = круг, но по заданию "округлённые края" — 15% подойдёт)
 local corner = Instance.new("UICorner")
-corner.Parent = joystickFrame
-corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = button
+corner.CornerRadius = UDim.new(0, 15)  -- 15 пикселей радиус
 
--- Кружок (индикатор)
-local knob = Instance.new("Frame")
-knob.Parent = joystickFrame
-knob.Size = UDim2.new(0, 40, 0, 40)
-knob.Position = UDim2.new(0.5, -20, 0.5, -20)
-knob.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-knob.BackgroundTransparency = 0.4
-knob.BorderSizePixel = 0
-local knobCorner = Instance.new("UICorner")
-knobCorner.Parent = knob
-knobCorner.CornerRadius = UDim.new(1, 0)
+-- ========== ВИЗУАЛЬНЫЕ ЭФФЕКТЫ ФЛЭША ==========
+local lightningParts = {}
 
--- ========== ЭФФЕКТЫ СТРУЙ ==========
-local function createJetEffect(position, direction)
-    for i = 1, 4 do
-        local p = Instance.new("Part")
-        p.Size = Vector3.new(1, 1, 1)
-        p.Shape = Enum.PartType.Ball
-        p.Material = Enum.Material.Neon
-        p.BrickColor = BrickColor.new("Bright orange")
-        p.Position = position + direction * 2
-        p.Velocity = -direction * math.random(40, 120) + Vector3.new(math.random(-15,15), math.random(-15,15), math.random(-15,15))
-        p.CanCollide = false
-        p.Anchored = false
-        p.Parent = workspace
-        game:GetService("Debris"):AddItem(p, 0.6)
+local function spawnLightning()
+    -- Создаём молнии вокруг персонажа
+    for i = 1, 6 do
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(0.5, 0.5, math.random(5, 15))
+        part.Shape = Enum.PartType.Block
+        part.Material = Enum.Material.Neon
+        part.BrickColor = BrickColor.new("Bright blue")
+        part.Anchored = true
+        part.CanCollide = false
+        part.Transparency = 0.3
+        part.Parent = workspace
+        -- Располагаем вокруг игрока
+        local angle = math.rad(i * 60 + math.random(-10, 10))
+        local radius = 6
+        part.Position = rootPart.Position + Vector3.new(math.cos(angle)*radius, math.random(-2, 4), math.sin(angle)*radius)
+        part.Orientation = Vector3.new(math.random(-30,30), math.random(-180,180), math.random(-30,30))
+        table.insert(lightningParts, part)
     end
 end
 
--- ========== ОБНОВЛЕНИЕ ПОЛЁТА ==========
-local function updateFlight()
-    if not flying or not bodyVelocity then return end
+local function clearLightning()
+    for _, part in ipairs(lightningParts) do
+        part:Destroy()
+    end
+    lightningParts = {}
+end
 
-    local dir = joystickDir
-    if dir.Magnitude < deadZone then
-        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+local lightningConnection = nil
+
+local function updateLightning()
+    if not isFlash then
+        clearLightning()
         return
     end
-
-    local camera = workspace.CurrentCamera
-    if not camera then return end
-    local camCF = camera.CFrame
-    local forward = -camCF.LookVector
-    local right = camCF.RightVector
-    local up = camCF.UpVector
-
-    local dirNorm = dir.Unit
-    local velocity = forward * forwardBias + right * dirNorm.X + up * dirNorm.Y
-    velocity = velocity.Unit * maxSpeed
-
-    bodyVelocity.Velocity = velocity
-
-    local horizDir = Vector3.new(velocity.X, 0, velocity.Z)
-    if horizDir.Magnitude > 0.5 then
-        local lookAt = rootPart.Position + horizDir.Unit * 10
-        bodyGyro.CFrame = CFrame.lookAt(rootPart.Position, lookAt)
-    end
-
-    if dirNorm.Y > 0.2 then
-        createJetEffect(rootPart.Position - Vector3.new(0, 2, 0), Vector3.new(0, -1, 0))
-    elseif dirNorm.Y < -0.2 then
-        createJetEffect(rootPart.Position + Vector3.new(0, 2, 0), Vector3.new(0, 1, 0))
-    end
-end
-
--- ========== ЗАПУСК ==========
-local function startFlight()
-    if flying then return end
-    flying = true
-    toggleBtn.Text = "🛬 ПОСАДКА"
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    joystickFrame.Visible = true
-
-    humanoid.PlatformStand = true
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-
-    bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.Parent = rootPart
-    bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-
-    bodyGyro = Instance.new("BodyGyro")
-    bodyGyro.Parent = rootPart
-    bodyGyro.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
-
-    flightConnection = game:GetService("RunService").Heartbeat:Connect(updateFlight)
-    print("🦾 Iron Man Flight ACTIVATED")
-end
-
--- ========== ОСТАНОВКА ==========
-local function stopFlight()
-    if not flying then return end
-    flying = false
-    toggleBtn.Text = "🦾 ВЗЛЁТ"
-    toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
-    joystickFrame.Visible = false
-    joystickDir = Vector3.new(0, 0, 0)
-    knob.Position = UDim2.new(0.5, -20, 0.5, -20)
-
-    if flightConnection then
-        flightConnection:Disconnect()
-        flightConnection = nil
-    end
-    if bodyVelocity then
-        bodyVelocity:Destroy()
-        bodyVelocity = nil
-    end
-    if bodyGyro then
-        bodyGyro:Destroy()
-        bodyGyro = nil
-    end
-
-    humanoid.PlatformStand = false
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-    print("🛬 Flight deactivated.")
-end
-
--- ========== ОБРАБОТКА ВВОДА (UserInputService) ==========
-local uis = game:GetService("UserInputService")
-
-local function isWithinJoystick(pos)
-    if not joystickFrame.Visible then return false end
-    local framePos = joystickFrame.AbsolutePosition
-    local frameSize = joystickFrame.AbsoluteSize
-    return pos.X >= framePos.X and pos.X <= framePos.X + frameSize.X and
-           pos.Y >= framePos.Y and pos.Y <= framePos.Y + frameSize.Y
-end
-
-local function updateJoystickFromInput(pos)
-    if not joystickCenter then return end
-    local delta = pos - joystickCenter
-    local maxDelta = joystickRadius
-    local clamped = delta.Unit * math.min(delta.Magnitude, maxDelta)
-    joystickDir = clamped / maxDelta
-    knob.Position = UDim2.new(0.5, clamped.X, 0.5, clamped.Y)
-end
-
-local function onInputBegan(input, gameProcessed)
-    if gameProcessed then return end
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        if isWithinJoystick(input.Position) then
-            joystickActive = true
-            joystickCenter = joystickFrame.AbsolutePosition + joystickFrame.AbsoluteSize / 2
-            updateJoystickFromInput(input.Position)
+    -- Обновляем позиции молний (следуют за игроком)
+    for i, part in ipairs(lightningParts) do
+        if part and part.Parent then
+            local angle = math.rad(i * 60 + math.random(-5, 5))
+            local radius = 5 + math.sin(os.time() + i) * 1.5
+            part.Position = rootPart.Position + Vector3.new(math.cos(angle)*radius, math.random(-2, 4), math.sin(angle)*radius)
+            part.Orientation = Vector3.new(math.random(-30,30), math.random(-180,180), math.random(-30,30))
         end
     end
 end
 
-local function onInputChanged(input, gameProcessed)
-    if gameProcessed then return end
-    if not joystickActive then return end
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
-        updateJoystickFromInput(input.Position)
+-- ========== ВКЛЮЧЕНИЕ/ВЫКЛЮЧЕНИЕ РЕЖИМА ==========
+local function toggleFlash()
+    if not character or not humanoid then
+        character = player.Character or player.CharacterAdded:Wait()
+        humanoid = character:WaitForChild("Humanoid")
+        rootPart = character:WaitForChild("HumanoidRootPart")
     end
-end
 
-local function onInputEnded(input, gameProcessed)
-    if gameProcessed then return end
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        if joystickActive then
-            joystickActive = false
-            joystickDir = Vector3.new(0, 0, 0)
-            knob.Position = UDim2.new(0.5, -20, 0.5, -20)
-            joystickCenter = nil
+    isFlash = not isFlash
+
+    if isFlash then
+        -- Включаем суперскорость
+        humanoid.WalkSpeed = flashSpeed
+        humanoid.JumpPower = flashJump
+        -- Добавляем эффекты
+        spawnLightning()
+        if not lightningConnection then
+            lightningConnection = game:GetService("RunService").Heartbeat:Connect(updateLightning)
         end
+        button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)  -- зелёный при активации
+        button.Text = "⚡FLESH"
+        print("⚡ Режим Флэша АКТИВИРОВАН!")
+    else
+        -- Отключаем
+        humanoid.WalkSpeed = normalSpeed
+        humanoid.JumpPower = normalJump
+        clearLightning()
+        if lightningConnection then
+            lightningConnection:Disconnect()
+            lightningConnection = nil
+        end
+        button.BackgroundColor3 = Color3.fromRGB(128, 0, 255) -- фиолетовый
+        button.Text = "FLESH"
+        print("🛑 Режим Флэша ВЫКЛЮЧЕН")
     end
 end
 
-uis.InputBegan:Connect(onInputBegan)
-uis.InputChanged:Connect(onInputChanged)
-uis.InputEnded:Connect(onInputEnded)
-
--- ========== КНОПКА ВКЛ/ВЫКЛ ==========
-toggleBtn.MouseButton1Click:Connect(function()
-    if flying then stopFlight() else startFlight() end
-end)
+-- ========== ПРИВЯЗКА К КНОПКЕ ==========
+button.MouseButton1Click:Connect(toggleFlash)
 
 -- ========== ЗАЩИТА ПРИ РЕСПАВНЕ ==========
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
-    rootPart = character:WaitForChild("HumanoidRootPart")
     humanoid = character:WaitForChild("Humanoid")
-    if flying then stopFlight() end
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    -- Если был включён Флэш, выключаем
+    if isFlash then
+        isFlash = false
+        humanoid.WalkSpeed = normalSpeed
+        humanoid.JumpPower = normalJump
+        clearLightning()
+        if lightningConnection then
+            lightningConnection:Disconnect()
+            lightningConnection = nil
+        end
+        button.BackgroundColor3 = Color3.fromRGB(128, 0, 255)
+        button.Text = "FLESH"
+    end
 end)
 
-print("✅ MOD BY ROSE | IRON MAN FLIGHT (WORKING JOYSTICK) LOADED")
+print("✅ MOD BY ROSE | FLESH MODE LOADED")
 print("📱 Telegram: https://t.me/rosemod_deep")
